@@ -1,0 +1,6 @@
+from Profanity import ProfanityFilter
+
+clf = ProfanityFilter()
+while True:
+    text = input('>>><<<')
+    print(clf.is_profane(text))
