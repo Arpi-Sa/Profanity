@@ -1,17 +1,12 @@
 import os
 import re
+import pandas as pd
+from Levenshtein import jaro_winkler
 import inflection
 
 
 class ProfanityFilter:
     def __init__(self, **kwargs):
-
-        # If defined, use this instead of _censor_list
-        self._custom_censor_list = kwargs.get('custom_censor_list', [])
-
-        # Words to be used in conjunction with _censor_list
-        self._extra_censor_list = kwargs.get('extra_censor_list', [])
-
         # What to be censored -- should not be modified by user
         self._censor_list = []
 
@@ -20,7 +15,7 @@ class ProfanityFilter:
 
         # Where to find the censored words
         self._BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-        self._words_file = os.path.join(self._BASE_DIR, 'data', 'bw.txt')
+        self._words_file = os.path.join(self._BASE_DIR, 'bw.txt')
 
         self._load_words()
 
@@ -28,45 +23,33 @@ class ProfanityFilter:
         with open(self._words_file, 'r') as f:
             self._censor_list = [line.strip() for line in f.readlines()]
 
-    def define_words(self, word_list):
-        self._custom_censor_list = word_list
+        self.df = pd.DataFrame(self._censor_list, columns=["Profane"])
 
-    def append_words(self, word_list):
-        self._extra_censor_list.extend(word_list)
 
-    def set_censor(self, character):
-        if isinstance(character, int):
-            character = str(character)
-        self._censor_char = character
+    def __preprocess(self, text):
+        return re.findall(r"\b\w\w*\b", text.lower())
+
+    def _is_close(self, text, thresh=0.94):
+        words = self.__preprocess(text)
+        self.df["Scores"] = self.df["Profane"].apply(lambda x: max(jaro_winkler(w, x) for w in words))
+        bword, score = self.df.sort_values("Scores", ascending=False).iloc[0].tolist()
+        if score > thresh:
+            return True
+        return False
+
 
     def has_bad_word(self, text):
-        return self.censor(text) != text
+        return (self.censor(text) != text) or (self._is_close(text))
 
-    def get_custom_censor_list(self):
-        return self._custom_censor_list
-
-    def get_extra_censor_list(self):
-        return self._extra_censor_list
 
     def get_profane_words(self):
         profane_words = []
+        profane_words = [w for w in self._censor_list]
 
-        if self._custom_censor_list:
-            profane_words = self._custom_censor_list.copy()
-        else:
-            profane_words = self._censor_list.copy()
-
-        profane_words.extend(self._extra_censor_list)
         profane_words.extend([inflection.pluralize(word) for word in profane_words])
         profane_words = list(set(profane_words))
 
         return profane_words
-
-    def restore_words(self):
-        self._custom_censor_list = []
-        self._extra_censor_list = []
-        #self._load_words()
-        #print("Hey" in self.get_profane_words())
 
 
     def censor(self, input_text):
